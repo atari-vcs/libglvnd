@@ -35,6 +35,9 @@
 #include "glapi.h"
 #include "glvnd/GLdispatchABI.h"
 
+#if !defined(_CALL_ELF) || (_CALL_ELF == 1)
+#error "ELFv1 ABI is not supported"
+#endif
 
 // NOTE: These must be powers of two:
 #define ENTRY_STUB_ALIGN 64
@@ -62,7 +65,8 @@ __asm__(".balign " U_STRINGIFY(GLDISPATCH_PAGE_SIZE) "\n"
     "  ld     11, _glapi_tls_Current@got@tprel@l(11)\n\t"       \
     "  add    11, 11,_glapi_tls_Current@tls\n\t"                \
     "  ld     11, 0(11)\n\t"                                    \
-    "  ld     12, " slot "*8(11)\n\t"                           \
+    "  addis  11, 11, (" slot "*8)@ha\n" \
+    "  ld     12, (" slot "*8)@l (11)\n" \
     "  mtctr  12\n\t"                                           \
     "  bctr\n"                                                  \
     // Conceptually, this is:
@@ -85,15 +89,15 @@ __asm__(".balign " U_STRINGIFY(GLDISPATCH_PAGE_SIZE) "\n"
 
 __asm__(".text\n");
 
-__asm__("ppc64le_current_tls:\n\t"
+__asm__("ppc64_current_tls:\n\t"
         "  addis  3, 2, _glapi_tls_Current@got@tprel@ha\n\t"
         "  ld     3, _glapi_tls_Current@got@tprel@l(3)\n\t"
         "  blr\n"
         );
 
-extern uint64_t ppc64le_current_tls();
+extern uint64_t ppc64_current_tls();
 
-const int entry_type = __GLDISPATCH_STUB_PPC64LE;
+const int entry_type = __GLDISPATCH_STUB_PPC64;
 const int entry_stub_size = ENTRY_STUB_ALIGN;
 
 static const uint32_t ENTRY_TEMPLATE[] =
@@ -136,18 +140,17 @@ static const uint32_t ENTRY_TEMPLATE[] =
 static const int TEMPLATE_OFFSET_TLS_ADDR = sizeof(ENTRY_TEMPLATE) - 16;
 static const int TEMPLATE_OFFSET_SLOT = sizeof(ENTRY_TEMPLATE) - 8;
 
-void entry_generate_default_code(char *entry, int slot)
+void entry_generate_default_code(int index, int slot)
 {
-    char *writeEntry = u_execmem_get_writable(entry);
-
+    char *entry = (char *) (public_entry_start + (index * entry_stub_size));
     STATIC_ASSERT(ENTRY_STUB_ALIGN >= sizeof(ENTRY_TEMPLATE));
 
     assert(slot >= 0);
 
-    memcpy(writeEntry, ENTRY_TEMPLATE, sizeof(ENTRY_TEMPLATE));
+    memcpy(entry, ENTRY_TEMPLATE, sizeof(ENTRY_TEMPLATE));
 
-    *((uint64_t *) (writeEntry + TEMPLATE_OFFSET_TLS_ADDR)) = (uintptr_t) ppc64le_current_tls();
-    *((uint64_t *) (writeEntry + TEMPLATE_OFFSET_SLOT)) = slot * sizeof(mapi_func);
+    *((uint64_t *) (entry + TEMPLATE_OFFSET_TLS_ADDR)) = (uintptr_t) ppc64_current_tls();
+    *((uint64_t *) (entry + TEMPLATE_OFFSET_SLOT)) = slot * sizeof(mapi_func);
 
     // This sequence is from the PowerISA Version 2.07B book.
     // It may be a bigger hammer than we need, but it works;
@@ -158,7 +161,7 @@ void entry_generate_default_code(char *entry, int slot)
                          "  sync\n\t"
                          "  icbi 0, %0\n\t"
                          "  isync\n"
-                         : : "r" (writeEntry)
+                         : : "r" (entry)
                      );
 }
 

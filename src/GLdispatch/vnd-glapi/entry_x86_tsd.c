@@ -56,18 +56,20 @@ __asm__(".balign " U_STRINGIFY(GLDISPATCH_PAGE_SIZE) "\n"
     func ":\n"
 
 #define STUB_ASM_CODE(slot)         \
-    "push %ebx\n" \
+    ENDBR \
     "call 1f\n" \
     "1:\n" \
-    "popl %ebx\n" \
-    "addl $_GLOBAL_OFFSET_TABLE_+[.-1b], %ebx\n" \
-    "movl _glapi_Current@GOT(%ebx), %eax\n" \
+    "popl %ecx\n" \
+    "addl $_GLOBAL_OFFSET_TABLE_+[.-1b], %ecx\n" \
+    "movl _glapi_Current@GOT(%ecx), %eax\n" \
     "mov (%eax), %eax\n" \
     "testl %eax, %eax\n" \
     "jne 1f\n" \
+    "push %ebx\n" \
+    "movl %ecx, %ebx\n" \
     "call _glapi_get_current@PLT\n" \
+    "popl %ebx\n" \
     "1:\n" \
-    "pop %ebx\n" \
     "jmp *(4 * " slot ")(%eax)\n"
 
 #define MAPI_TMP_STUB_ASM_GCC
@@ -82,42 +84,4 @@ __asm__(".text\n");
 
 const int entry_type = __GLDISPATCH_STUB_X86;
 const int entry_stub_size = ENTRY_STUB_ALIGN;
-
-// Note that the generated stubs are simpler than the assembly stubs above.
-// For the generated stubs, we can patch in the addresses of _glapi_Current and
-// _glapi_get_current, so we don't need to go through the GOT and PLT lookups.
-static const unsigned char ENTRY_TEMPLATE[] =
-{
-    0xa1, 0x40, 0x30, 0x20, 0x10,       // <ENTRY>:    mov    _glapi_Current, %eax
-    0x85, 0xc0,                         // <ENTRY+5>:  test   %eax, %eax
-    0x74, 0x06,                         // <ENTRY+7>:  je     <ENTRY+15>
-    0xff, 0xa0, 0x40, 0x30, 0x20, 0x10, // <ENTRY+9>:  jmp    *slot(%eax)
-    0xe8, 0x40, 0x30, 0x20, 0x10,       // <ENTRY+15>: call   _glapi_get_current
-    0xff, 0xa0, 0x40, 0x30, 0x20, 0x10, // <ENTRY+20>: jmp    *slot(%eax)
-};
-
-// These are the offsets in ENTRY_TEMPLATE of the values that we have to patch.
-static const int TEMPLATE_OFFSET_CURRENT_TABLE = 1;
-static const int TEMPLATE_OFFSET_CURRENT_TABLE_GET = 16;
-static const int TEMPLATE_OFFSET_CURRENT_TABLE_GET_RELATIVE = 20;
-static const int TEMPLATE_OFFSET_SLOT1 = 11;
-static const int TEMPLATE_OFFSET_SLOT2 = 22;
-
-void entry_generate_default_code(char *entry, int slot)
-{
-    char *writeEntry = u_execmem_get_writable(entry);
-    uintptr_t getTableOffset;
-
-    memcpy(writeEntry, ENTRY_TEMPLATE, sizeof(ENTRY_TEMPLATE));
-
-    *((uint32_t *) (writeEntry + TEMPLATE_OFFSET_SLOT1)) = slot * sizeof(mapi_func);
-    *((uint32_t *) (writeEntry + TEMPLATE_OFFSET_SLOT2)) = slot * sizeof(mapi_func);
-    *((uintptr_t *) (writeEntry + TEMPLATE_OFFSET_CURRENT_TABLE)) = (uintptr_t) _glapi_Current;
-
-    // Calculate the offset to patch for the CALL instruction to
-    // _glapi_get_current.
-    getTableOffset = (uintptr_t) _glapi_get_current;
-    getTableOffset -= (((uintptr_t) entry) + TEMPLATE_OFFSET_CURRENT_TABLE_GET_RELATIVE);
-    *((uintptr_t *) (writeEntry + TEMPLATE_OFFSET_CURRENT_TABLE_GET)) = getTableOffset;
-}
 
