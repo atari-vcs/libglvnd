@@ -1,3 +1,10 @@
+libglvnd (1.1.0-1co1) apertis; urgency=medium
+
+  [ Ritesh Raj Sarraf ]
+  * debian/apertis/component: Set to target
+
+ -- Emanuele Aina <emanuele.aina@collabora.com>  Sat, 20 Feb 2021 01:01:05 +0000
+
 libglvnd (1.1.0-1) unstable; urgency=medium
 
   * New upstream release.
