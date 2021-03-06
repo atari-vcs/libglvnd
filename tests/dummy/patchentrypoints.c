@@ -44,6 +44,7 @@ static void patch_x86_64(char *writeEntry, const char *execEntry,
     // that it's the right size for either build.
     uint64_t incrementAddr = (uint64_t) ((uintptr_t) incrementPtr);
     const char tmpl[] = {
+        0xf3, 0x0f, 0x1e, 0xfa,                               // endbr64
         0xa1, 0xf0, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12, // movabs 0x123456789abcdef0, %eax
         0x83, 0xc0, 0x01,                                     // add    $0x1,%eax
         0xa3, 0xf0, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12, // movabs %eax,0x123456789abcdef0
@@ -55,8 +56,8 @@ static void patch_x86_64(char *writeEntry, const char *execEntry,
     }
 
     memcpy(writeEntry, tmpl, sizeof(tmpl));
-    memcpy(writeEntry + 1, &incrementAddr, sizeof(incrementAddr));
-    memcpy(writeEntry + 13, &incrementAddr, sizeof(incrementAddr));
+    memcpy(writeEntry + 5, &incrementAddr, sizeof(incrementAddr));
+    memcpy(writeEntry + 17, &incrementAddr, sizeof(incrementAddr));
 
 #else
     assert(0); // Should not be calling this
@@ -70,6 +71,7 @@ static void patch_x86(char *writeEntry, const char *execEntry,
 #if defined(__i386__)
     uintptr_t *p;
     char tmpl[] = {
+        0xf3, 0x0f, 0x1e, 0xfb,     // endbr32
         0xa1, 0x0, 0x0, 0x0, 0x0,   // mov 0x0, %eax
         0x83, 0xc0, 0x01,           // add $0x1, %eax
         0xa3, 0x0, 0x0, 0x0, 0x0,   // mov %eax, 0x0
@@ -83,10 +85,10 @@ static void patch_x86(char *writeEntry, const char *execEntry,
     }
 
     // Patch the address of the incrementPtr variable.
-    p = (uintptr_t *)&tmpl[1];
+    p = (uintptr_t *)&tmpl[5];
     *p = (uintptr_t) incrementPtr;
 
-    p = (uintptr_t *)&tmpl[9];
+    p = (uintptr_t *)&tmpl[13];
     *p = (uintptr_t) incrementPtr;
 
     memcpy(writeEntry, tmpl, sizeof(tmpl));
@@ -164,7 +166,7 @@ static void patch_aarch64(char *writeEntry, const char *execEntry,
 #endif
 }
 
-static void patch_ppc64le(char *writeEntry, const char *execEntry,
+static void patch_ppc64(char *writeEntry, const char *execEntry,
         int stubSize, void *incrementPtr)
 {
 #if defined(__PPC64__)
@@ -176,9 +178,9 @@ static void patch_ppc64le(char *writeEntry, const char *execEntry,
         // 1000:
         0x7D2903A6,     //  mtctr 9
         0xE96C0020,     //  ld    11, 9000f-1000b(12)
-        0xE92B0000,     //  ld    9, 0(11)
+        0x812B0000,     //  lwz   9, 0(11)
         0x39290001,     //  addi  9, 9, 1
-        0xF92B0000,     //  std   9, 0(11)
+        0x912B0000,     //  stw   9, 0(11)
         0x7D2902A6,     //  mfctr 9
         0x4E800020,     //  blr
         0x60000000,     //  nop
@@ -220,7 +222,7 @@ GLboolean dummyCheckPatchSupported(int type, int stubSize)
         case __GLDISPATCH_STUB_ARMV7_THUMB:
         case __GLDISPATCH_STUB_AARCH64:
         case __GLDISPATCH_STUB_X32:
-        case __GLDISPATCH_STUB_PPC64LE:
+        case __GLDISPATCH_STUB_PPC64:
             return GL_TRUE;
         default:
             return GL_FALSE;
@@ -253,8 +255,8 @@ GLboolean dummyPatchFunction(int type, int stubSize,
             case __GLDISPATCH_STUB_AARCH64:
                 patch_aarch64(writeAddr, execAddr, stubSize, incrementPtr);
                 break;
-            case __GLDISPATCH_STUB_PPC64LE:
-                patch_ppc64le(writeAddr, execAddr, stubSize, incrementPtr);
+            case __GLDISPATCH_STUB_PPC64:
+                patch_ppc64(writeAddr, execAddr, stubSize, incrementPtr);
                 break;
             default:
                 assert(0);

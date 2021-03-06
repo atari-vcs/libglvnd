@@ -31,35 +31,26 @@
 #include "entry.h"
 #include "glapi.h"
 
-struct mapi_stub;
+/**
+ * Frees any memory that was allocated for the stub functions.
+ *
+ * This should only be called when the library is unloaded.
+ */
+void stub_cleanup(void);
 
 #if !defined(STATIC_DISPATCH_ONLY)
 
-/**
- * Frees any memory that was allocated for any dynamic stub functions.
- *
- * This should only be called when the library is unloaded, since any generated
- * functions won't work after this.
- */
-void stub_cleanup_dynamic(void);
-
-const struct mapi_stub *
+int
 stub_find_public(const char *name);
 
-struct mapi_stub *
+int
 stub_find_dynamic(const char *name, int generate);
 
-const struct mapi_stub *
-stub_find_by_slot(int slot);
-
 const char *
-stub_get_name(const struct mapi_stub *stub);
-
-int
-stub_get_slot(const struct mapi_stub *stub);
+stub_get_name(int index);
 
 mapi_func
-stub_get_addr(const struct mapi_stub *stub);
+stub_get_addr(int index);
 
 int stub_get_count(void);
 #endif // !defined(STATIC_DISPATCH_ONLY)

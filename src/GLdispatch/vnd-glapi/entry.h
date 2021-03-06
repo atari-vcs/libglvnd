@@ -35,9 +35,6 @@ typedef void (*mapi_func)(void);
 extern const int entry_type;
 extern const int entry_stub_size;
 
-void
-entry_init_public(void);
-
 /**
  * Returns the address of an entrypoint.
  *
@@ -54,20 +51,14 @@ mapi_func
 entry_get_public(int index);
 
 /**
- * Generates an entrypoint for an extension function.
- *
- * This will allocate executable memory and generate an entrypoint function.
- * This is used to dispatch any OpenGL functions that are not known at compile
- * time.
- *
- * \param slot The slot in the dispatch table.
- * \return A newly generated entrypoint function, or NULL on failure.
+ * Saves and returns a copy of all of the entrypoints.
  */
-mapi_func
-entry_generate(int slot);
+void *entry_save_entrypoints(void);
 
-void
-entry_generate_default_code(char *entry, int slot);
+/**
+ * Restores the entrypoints that were saved with entry_save_entrypoints.
+ */
+void entry_restore_entrypoints(void *saved);
 
 /**
  * Called before starting entrypoint patching.
@@ -87,12 +78,15 @@ int entry_patch_start(void);
 int entry_patch_finish(void);
 
 /**
- * Returns the addresses for an entrypoint that a vendor library can patch.
+ * Returns the address for an entrypoint that a vendor library can patch.
  *
- * \param[in] entry The entrypoint to patch.
- * \param[out] writePtr The address that the vendor library can write to.
- * \param[out] execPtr An executable mapping of \p writePtr.
+ * Note that this may be different than \c entry_get_public. For example, in
+ * ARMv7, \c entry_get_public adds one to the address so that it switches to
+ * thumb mode.
+ *
+ * \param int The index of the entrypoint to patch.
+ * \return The address of the function to patch.
  */
-void entry_get_patch_addresses(mapi_func entry, void **writePtr, const void **execPtr);
+void *entry_get_patch_address(int index);
 
 #endif /* _ENTRY_H_ */
