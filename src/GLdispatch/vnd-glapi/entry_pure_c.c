@@ -30,6 +30,7 @@
 #include <stdlib.h>
 
 #include "glapi.h"
+#include "utils_misc.h"
 #include "glvnd/GLdispatchABI.h"
 
 static INLINE const struct _glapi_table *
@@ -52,22 +53,15 @@ entry_current_get(void)
 const int entry_type = __GLDISPATCH_STUB_UNKNOWN;
 const int entry_stub_size = 0;
 
-void
-entry_init_public(void)
-{
-}
-
-void
-entry_generate_default_code(char *entry, int slot)
-{
-    assert(0);
-}
-
 mapi_func
 entry_get_public(int index)
 {
-   /* pubic_entries are defined by MAPI_TMP_PUBLIC_ENTRIES */
-   return public_entries[index];
+    /* pubic_entries are defined by MAPI_TMP_PUBLIC_ENTRIES */
+    if (index >= 0 && index < ARRAY_LEN(public_entries)) {
+        return public_entries[index];
+    } else {
+        return NULL;
+    }
 }
 
 int entry_patch_start(void)
@@ -82,17 +76,19 @@ int entry_patch_finish(void)
     return 0;
 }
 
-void entry_get_patch_addresses(mapi_func entry, void **writePtr, const void **execPtr)
+void *entry_get_patch_address(int index)
 {
     assert(!"This should never be called");
-    *writePtr = NULL;
-    *execPtr = NULL;
+    return NULL;
 }
 
-#if !defined(STATIC_DISPATCH_ONLY)
-mapi_func
-entry_generate(int slot)
+void *entry_save_entrypoints(void)
 {
-   return NULL;
+    assert(!"This should never be called");
+    return NULL;
 }
-#endif // !defined(STATIC_DISPATCH_ONLY)
+
+void entry_restore_entrypoints(void *saved)
+{
+    assert(!"This should never be called");
+}

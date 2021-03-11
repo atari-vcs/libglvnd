@@ -38,7 +38,7 @@
 #include "glapi.h"
 #include "glvnd/GLdispatchABI.h"
 
-#define ENTRY_STUB_ALIGN 16
+#define ENTRY_STUB_ALIGN 32
 #if !defined(GLDISPATCH_PAGE_SIZE)
 #define GLDISPATCH_PAGE_SIZE 4096
 #endif
@@ -55,9 +55,14 @@ __asm__(".balign " U_STRINGIFY(GLDISPATCH_PAGE_SIZE) "\n"
     ".balign " U_STRINGIFY(ENTRY_STUB_ALIGN) "\n" \
     func ":\n"
 
-#define STUB_ASM_CODE(slot)      \
-    "call x86_current_tls\n\t"    \
-    "movl %gs:(%eax), %eax\n\t"   \
+#define STUB_ASM_CODE(slot)                             \
+    ENDBR                                               \
+    "call 1f\n\t"                                       \
+    "1:\n\t"                                            \
+    "popl %eax\n\t"                                     \
+    "addl $_GLOBAL_OFFSET_TABLE_+[.-1b], %eax\n\t"      \
+    "movl _glapi_tls_Current@GOTNTPOFF(%eax), %eax\n\t" \
+    "movl %gs:(%eax), %eax\n\t"                         \
     "jmp *(4 * " slot ")(%eax)"
 
 #define MAPI_TMP_STUB_ASM_GCC
@@ -70,35 +75,6 @@ __asm__(".balign " U_STRINGIFY(GLDISPATCH_PAGE_SIZE) "\n"
 
 __asm__(".text\n");
 
-__asm__("x86_current_tls:\n\t"
-    ".balign " U_STRINGIFY(ENTRY_STUB_ALIGN) "\n"
-    "call 1f\n"
-        "1:\n\t"
-        "popl %eax\n\t"
-    "addl $_GLOBAL_OFFSET_TABLE_+[.-1b], %eax\n\t"
-    "movl _glapi_tls_Current@GOTNTPOFF(%eax), %eax\n\t"
-    "ret");
-
-extern uint32_t
-x86_current_tls();
-
 const int entry_type = __GLDISPATCH_STUB_X86;
 const int entry_stub_size = ENTRY_STUB_ALIGN;
-
-static const unsigned char ENTRY_TEMPLATE[] =
-{
-    0x65, 0xa1, 0x00, 0x00, 0x00, 0x00, /* movl %gs:0x0, %eax */
-    0xff, 0xa0, 0x34, 0x12, 0x00, 0x00, /* jmp *0x1234(%eax) */
-};
-static const int TEMPLATE_OFFSET_TLS_OFFSET = 2;
-static const int TEMPLATE_OFFSET_SLOT = 8;
-
-void entry_generate_default_code(char *entry, int slot)
-{
-    char *writeEntry = u_execmem_get_writable(entry);
-
-    memcpy(writeEntry, ENTRY_TEMPLATE, sizeof(ENTRY_TEMPLATE));
-    *((uint32_t *) (writeEntry + TEMPLATE_OFFSET_TLS_OFFSET)) = x86_current_tls();
-    *((uint32_t *) (writeEntry + TEMPLATE_OFFSET_SLOT)) = (uint32_t) (slot * sizeof(mapi_func));
-}
 

@@ -47,7 +47,7 @@
 __asm__(".syntax unified\n\t");
 
 /*
- * u_execmem_alloc() allocates 64 bytes per stub.
+ * The size of each dispatch stub.
  */
 #define ENTRY_STUB_ALIGN 128
 #if !defined(GLDISPATCH_PAGE_SIZE)
@@ -120,40 +120,6 @@ __asm__(".syntax unified\n\t");
     "3:\n\t"                                 \
     ".word " slot "\n\t"
 
-/*
- * This template is used to generate new dispatch stubs at runtime. It's
- * functionally equivalent to the code in STUB_ASM_CODE(), but not identical.
- * The difference between the two is that STUB_ASM_CODE has to be position
- * independent, so it has to go through the GOT and PLT to get the addresses of
- * _glapi_Current and _glapi_get_current. In the generated stubs, we can just
- * plug the addresses in directly.
- */
-static const uint16_t ENTRY_TEMPLATE[] =
-{
-    0xb40f, // push {r0-r3}
-    0xf8df, 0x0028, // ldr r0, 1f
-    0x6800, // ldr r0, [r0]
-    0x2800, // cmp r0, #0
-    0xbf08, // it eq
-    0xe008, // beq 10f
-    0x4909, // 11: ldr r1, 3f
-    0xf04f, 0x0204, // mov r2, #4
-    0xfb01, 0xf102, // mul r1, r1, r2
-    0xf850, 0xc001, // ldr ip, [r0, +r1]
-    0xbc0f, // pop {r0-r3}
-    0x4760, // bx ip
-    0xb500, // 10: push {lr}
-    0x4803, // ldr r0, 2f
-    0x4780, // blx r0
-    0xf85d, 0xeb04, // pop {lr}
-    0xe7f0, // b 11b
-
-    // Offsets that need to be patched
-    0x0000, 0x0000, // 1: .word _glapi_Current
-    0x0000, 0x0000, // 2: .word _glapi_get_current
-    0x0000, 0x0000, // 3: .word " slot "
-};
-
 __asm__(".section wtext,\"ax\"\n"
         ".balign " U_STRINGIFY(GLDISPATCH_PAGE_SIZE) "\n"
         ".syntax unified\n"
@@ -180,38 +146,6 @@ __asm__(".arm\n\t");
 const int entry_type = __GLDISPATCH_STUB_ARMV7_THUMB;
 const int entry_stub_size = ENTRY_STUB_ALIGN;
 
-static const int TEMPLATE_OFFSET_CURRENT_TABLE     = sizeof(ENTRY_TEMPLATE) - 3*4;
-static const int TEMPLATE_OFFSET_CURRENT_TABLE_GET = sizeof(ENTRY_TEMPLATE) - 2*4;
-static const int TEMPLATE_OFFSET_SLOT              = sizeof(ENTRY_TEMPLATE) - 4;
-
-void
-entry_init_public(void)
-{
-    STATIC_ASSERT(sizeof(ENTRY_TEMPLATE) <= ENTRY_STUB_ALIGN);
-}
-
-void entry_generate_default_code(char *entry, int slot)
-{
-    char *writeEntry;
-
-    // Make sure the base address has the Thumb mode bit
-    assert((uintptr_t)entry & (uintptr_t)0x1);
-
-    // Get the pointer to the writable mapping.
-    writeEntry = (char *) u_execmem_get_writable(entry - 1);
-
-    memcpy(writeEntry, ENTRY_TEMPLATE, sizeof(ENTRY_TEMPLATE));
-
-    *((uint32_t *)(writeEntry + TEMPLATE_OFFSET_SLOT)) = slot;
-    *((uint32_t *)(writeEntry + TEMPLATE_OFFSET_CURRENT_TABLE)) =
-        (uint32_t)_glapi_Current;
-    *((uint32_t *)(writeEntry + TEMPLATE_OFFSET_CURRENT_TABLE_GET)) =
-        (uint32_t)_glapi_get_current;
-
-    // See http://community.arm.com/groups/processors/blog/2010/02/17/caches-and-self-modifying-code
-    __builtin___clear_cache(writeEntry, writeEntry + sizeof(ENTRY_TEMPLATE));
-}
-
 // Note: The rest of these functions could also be used for ARMv7 TLS stubs,
 // once those are implemented.
 
@@ -222,27 +156,3 @@ entry_get_public(int index)
     return (mapi_func)(public_entry_start + (index * entry_stub_size) + 1);
 }
 
-void entry_get_patch_addresses(mapi_func entry, void **writePtr, const void **execPtr)
-{
-    // Get the actual beginning of the stub allocation
-    void *entryBase = (void *) (((uintptr_t) entry) - 1);
-    *execPtr = (const void *) entryBase;
-    *writePtr = u_execmem_get_writable(entryBase);
-}
-
-#if !defined(STATIC_DISPATCH_ONLY)
-mapi_func entry_generate(int slot)
-{
-    void *code = u_execmem_alloc(entry_stub_size);
-    if (!code) {
-        return NULL;
-    }
-
-    // Add 1 to the base address to force Thumb mode when jumping to the stub
-    code = (void *)((char *)code + 1);
-
-    entry_generate_default_code(code, slot);
-
-    return (mapi_func) code;
-}
-#endif // !defined(STATIC_DISPATCH_ONLY)

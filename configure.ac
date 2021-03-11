@@ -2,7 +2,7 @@ dnl configure.ac
 dnl Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.63])
-AC_INIT([libglvnd], [1.1.0], [kbrenneman@nvidia.com])
+AC_INIT([libglvnd], [1.3.2], [kbrenneman@nvidia.com])
 AC_CONFIG_SRCDIR([config.h.in])
 AC_CONFIG_HEADERS([config.h])
 
@@ -27,7 +27,26 @@ AC_PROG_LN_S
 AC_PROG_MAKE_SET
 AC_PROG_LIBTOOL
 AC_PROG_MKDIR_P
-AC_CHECK_PROGS([PYTHON2], [python2.7 python2 python])
+PKG_PROG_PKG_CONFIG
+AC_PROG_NM
+
+AC_ARG_ENABLE([werror],
+    [AS_HELP_STRING([--enable-werror],
+        [Build with -Werror @<:@default=disabled@:>@])],
+    [enable_werror=$enableval],
+    [enable_werror=no])
+if test "x$enable_werror" = xyes; then
+    CFLAGS="$CFLAGS -Werror"
+fi
+
+# The tarball from "make dist" already contains all of the generated files. If
+# we're building from that, then we won't need Python.
+if test -e "$srcdir/src/GLdispatch/vnd-glapi/g_glapi_mapi_gl_tmp.h" ; then
+    AM_PATH_PYTHON([2.7],, [:])
+else
+    AM_PATH_PYTHON([2.7])
+fi
+AM_CONDITIONAL([HAVE_PYTHON], [test "$PYTHON" != :])
 
 if test "x$ac_cv_prog_cc_c99" = xno; then
         AC_MSG_ERROR([Building libglvnd requires a C99-enabled compiler])
@@ -41,21 +60,51 @@ AC_ARG_ENABLE([egl],
 )
 AM_CONDITIONAL([ENABLE_EGL], [test "x$enable_egl" = "xyes"])
 
+AC_ARG_ENABLE([x11],
+    [AS_HELP_STRING([--disable-x11],
+        [Disable X11 support. Implies --disable-glx @<:@default=enabled@:>@])],
+    [enable_x11="$enableval"],
+    [enable_x11=yes]
+)
+AM_CONDITIONAL([ENABLE_X11], [test "x$enable_x11" = "xyes"])
+
 AC_ARG_ENABLE([glx],
     [AS_HELP_STRING([--disable-glx],
         [Disable GLX support @<:@default=enabled@:>@])],
     [enable_glx="$enableval"],
-    [enable_glx=yes]
+    [enable_glx="$enable_x11"]
 )
 AM_CONDITIONAL([ENABLE_GLX], [test "x$enable_glx" = "xyes"])
 
-AC_ARG_ENABLE([gles],
-    [AS_HELP_STRING([--disable-gles],
-        [Do not build the libGLES*.so libraries @<:@default=enabled@:>@])],
-    [enable_gles="$enableval"],
-    [enable_gles=yes]
+if test "x$enable_x11" != "xyes" -a "x$enable_glx" = "xyes" ; then
+    AC_MSG_ERROR([Can't build GLX without X11.])
+fi
+
+AC_ARG_ENABLE([gles1],
+    [AS_HELP_STRING([--disable-gles1],
+        [disable support for OpenGL ES 1.x API @<:@default=enabled@:>@])],
+    [enable_gles1="$enableval"],
+    [enable_gles1=yes])
+AM_CONDITIONAL([ENABLE_GLES1], [test "x$enable_gles1" = "xyes"])
+
+AC_ARG_ENABLE([gles2],
+    [AS_HELP_STRING([--disable-gles2],
+        [disable support for OpenGL ES 2.x and 3.x API @<:@default=enabled@:>@])],
+    [enable_gles2="$enableval"],
+    [enable_gles2=yes])
+AM_CONDITIONAL([ENABLE_GLES2], [test "x$enable_gles2" = "xyes"])
+
+AC_ARG_ENABLE([headers],
+    [AS_HELP_STRING([--disable-headers],
+        [Do not install the GL/GLES/GLX/EGL header files @<:@default=enabled@:>@])],
+    [enable_headers="$enableval"],
+    [enable_headers=yes]
 )
-AM_CONDITIONAL([ENABLE_GLES], [test "x$enable_gles" = "xyes"])
+AM_CONDITIONAL([ENABLE_GL_HEADERS], [test "x$enable_headers" = "xyes"])
+AM_CONDITIONAL([ENABLE_EGL_HEADERS], [test "x$enable_headers" = "xyes" -a "x$enable_egl" = "xyes"])
+AM_CONDITIONAL([ENABLE_GLX_HEADERS], [test "x$enable_headers" = "xyes" -a "x$enable_glx" = "xyes"])
+AM_CONDITIONAL([ENABLE_GLES1_HEADERS], [test "x$enable_headers" = "xyes" -a "x$enable_gles1" = "xyes"])
+AM_CONDITIONAL([ENABLE_GLES2_HEADERS], [test "x$enable_headers" = "xyes" -a "x$enable_gles2" = "xyes"])
 
 dnl
 dnl Arch/platform-specific settings. Copied from mesa
@@ -90,20 +139,27 @@ if test "x$enable_asm" = xyes; then
             ;;
         esac
         ;;
-    armv7*l)
+    armv7*l | armv8*l)
         asm_arch=armv7l
         ;;
     aarch64)
         asm_arch=aarch64
         ;;
     powerpc64le)
-        asm_arch=ppc64le
+        asm_arch=ppc64
         ;;
+    powerpc64)
+        AC_COMPILE_IFELSE([AC_LANG_SOURCE([
+        #if !defined(_CALL_ELF) || (_CALL_ELF) == 1
+        #  error "ELFv1 ABI"
+        #endif
+        ])],
+        [asm_arch=ppc64],[])
     esac
 
     case "$asm_arch" in
     x86)
-        DEFINES="$DEFINES -DUSE_X86_ASM -DUSE_MMX_ASM -DUSE_3DNOW_ASM -DUSE_SSE_ASM"
+        DEFINES="$DEFINES -DUSE_X86_ASM"
         AC_MSG_RESULT([yes, x86])
         ;;
     x86_64)
@@ -118,9 +174,9 @@ if test "x$enable_asm" = xyes; then
         DEFINES="$DEFINES -DUSE_AARCH64_ASM"
         AC_MSG_RESULT([yes, aarch64])
         ;;
-    ppc64le)
-        DEFINES="$DEFINES -DUSE_PPC64LE_ASM"
-        AC_MSG_RESULT([yes, ppc64le])
+    ppc64)
+        DEFINES="$DEFINES -DUSE_PPC64_ASM"
+        AC_MSG_RESULT([yes, ppc64])
         ;;
     *)
         AC_MSG_RESULT([no, platform '$host_cpu' not supported])
@@ -135,9 +191,19 @@ dnl
 dnl Checks for libraries.
 AX_PTHREAD()
 
-PKG_CHECK_MODULES([X11], [x11])
-PKG_CHECK_MODULES([XEXT], [xext])
-PKG_CHECK_MODULES([GLPROTO], [glproto])
+if test "x$enable_x11" = "xyes" ; then
+    PKG_CHECK_MODULES([X11], [x11])
+    AC_DEFINE([USE_X11], 1,
+        [Define to 1 if X11 support is enabled.])
+fi
+if test "x$enable_glx" = "xyes" ; then
+    PKG_CHECK_MODULES([XEXT], [xext])
+    PKG_CHECK_MODULES([GLPROTO], [glproto])
+fi
+
+AS_IF([test "x$gldispatch_use_tls" = "xyes"],
+      [AC_DEFINE([GLDISPATCH_USE_TLS], 1,
+      [Define to 1 if libGLdispatch should use a TLS variable for the dispatch table.])])
 
 dnl Checks for typedefs, structures, and compiler characteristics.
 AC_C_TYPEOF
@@ -190,13 +256,13 @@ xaarch64)
     gldispatch_entry_type=aarch64_tsd
     gldispatch_use_tls=no
     ;;
-xppc64le)
-    # For ppc64le, allow both the TLS and TSD stubs for now.
+xppc64)
+    # For ppc64, allow both the TLS and TSD stubs for now.
     if test "x$HAVE_INIT_TLS" = "xyes" ; then
-        gldispatch_entry_type=ppc64le_tls
+        gldispatch_entry_type=ppc64_tls
         gldispatch_use_tls=yes
     else
-        gldispatch_entry_type=ppc64le_tsd
+        gldispatch_entry_type=ppc64_tsd
         gldispatch_use_tls=no
     fi
     ;;
@@ -216,12 +282,15 @@ AM_CONDITIONAL([GLDISPATCH_TYPE_X86_TLS], [test "x$gldispatch_entry_type" = "xx8
 AM_CONDITIONAL([GLDISPATCH_TYPE_X86_TSD], [test "x$gldispatch_entry_type" = "xx86_tsd"])
 AM_CONDITIONAL([GLDISPATCH_TYPE_X86_64_TLS], [test "x$gldispatch_entry_type" = "xx86_64_tls"])
 AM_CONDITIONAL([GLDISPATCH_TYPE_X86_64_TSD], [test "x$gldispatch_entry_type" = "xx86_64_tsd"])
-AM_CONDITIONAL([GLDISPATCH_TYPE_PPC64LE_TLS], [test "x$gldispatch_entry_type" = "xppc64le_tls"])
-AM_CONDITIONAL([GLDISPATCH_TYPE_PPC64LE_TSD], [test "x$gldispatch_entry_type" = "xppc64le_tsd"])
+AM_CONDITIONAL([GLDISPATCH_TYPE_PPC64_TLS], [test "x$gldispatch_entry_type" = "xppc64_tls"])
+AM_CONDITIONAL([GLDISPATCH_TYPE_PPC64_TSD], [test "x$gldispatch_entry_type" = "xppc64_tsd"])
 AM_CONDITIONAL([GLDISPATCH_TYPE_ARMV7_TSD], [test "x$gldispatch_entry_type" = "xarmv7_tsd"])
 AM_CONDITIONAL([GLDISPATCH_TYPE_AARCH64_TSD], [test "x$gldispatch_entry_type" = "xaarch64_tsd"])
 AM_CONDITIONAL([GLDISPATCH_TYPE_PURE_C], [test "x$gldispatch_entry_type" = "xpure_c"])
 
+AS_IF([test "x$gldispatch_entry_type" != "xpure_c"],
+      [AC_DEFINE([USE_DISPATCH_ASM], 1,
+      [Define to 1 if libGLdispatch and libGLX should use assembly dispatch functions.])])
 
 AC_MSG_CHECKING([for constructor attributes])
 AC_COMPILE_IFELSE([AC_LANG_SOURCE([
@@ -288,24 +357,56 @@ AS_IF([test "x$HAVE_RTLD_NOLOAD" = "xyes"],
       [AC_DEFINE([HAVE_RTLD_NOLOAD], 1,
       [Define to 1 if the compiler supports RTLD_NOLOAD.])])
 
+AC_MSG_CHECKING([for dirent.d_type])
+AC_COMPILE_IFELSE([AC_LANG_SOURCE([
+#include <dirent.h>
+void foo(struct dirent *ent)
+{
+    (void) ent->d_type;
+}
+])],
+[HAVE_DIRENT_DTYPE=yes],[HAVE_DIRENT_DTYPE=no])
+AC_MSG_RESULT($HAVE_DIRENT_DTYPE)
+AS_IF([test "x$HAVE_DIRENT_DTYPE" = "xyes"],
+      [AC_DEFINE([HAVE_DIRENT_DTYPE], 1,
+      [Define to 1 if struct dirent has a d_type member.])])
+
+
 # See if the linker supports the --no-undefined flag.
 AX_CHECK_LINK_FLAG([-Xlinker --no-undefined],
       [AC_SUBST([LINKER_FLAG_NO_UNDEFINED], ["-Xlinker --no-undefined"])],
       [AC_SUBST([LINKER_FLAG_NO_UNDEFINED], [""])])
 
+AC_ARG_VAR([GLDISPATCH_PAGE_SIZE],
+    [Page size to align static dispatch stubs])
+AS_IF([test "x$GLDISPATCH_PAGE_SIZE" != "x"],
+      [AC_DEFINE_UNQUOTED([GLDISPATCH_PAGE_SIZE], [$GLDISPATCH_PAGE_SIZE],
+      [Page size to align static dispatch stubs.])])
+
+# Set EGL_NO_X11 unconditionally. Libglvnd doesn't make any assumptions about
+# native display or drawable types, so we don't need X11-specific typedefs for
+# them.
+DEFINES="$DEFINES -DEGL_NO_X11"
+
 dnl default CFLAGS
-CFLAGS="$CFLAGS -Wall -Werror -include config.h -fvisibility=hidden $DEFINES"
+CFLAGS="$CFLAGS -Wall -include config.h -fvisibility=hidden $DEFINES"
 
 AC_CONFIG_FILES([Makefile
                  libglvnd.pc
                  include/Makefile
                  src/Makefile
                  src/GL/Makefile
+                 src/GL/gl.pc
+                 src/OpenGL/opengl.pc
                  src/OpenGL/Makefile
+                 src/GLESv1/glesv1_cm.pc
                  src/GLESv1/Makefile
+                 src/GLESv2/glesv2.pc
                  src/GLESv2/Makefile
+                 src/GLX/glx.pc
                  src/GLX/Makefile
                  src/EGL/Makefile
+                 src/EGL/egl.pc
                  src/GLdispatch/Makefile
                  src/GLdispatch/vnd-glapi/Makefile
                  src/util/Makefile

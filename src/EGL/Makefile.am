@@ -49,6 +49,9 @@ libEGL_la_CFLAGS =  -I$(srcdir)/$(UTHASH_DIR)
 libEGL_la_CFLAGS += -I$(srcdir)/$(UTIL_DIR)
 libEGL_la_CFLAGS += -I$(srcdir)/$(GL_DISPATCH_DIR)
 libEGL_la_CFLAGS += -I$(top_srcdir)/include
+if ENABLE_X11
+libEGL_la_CFLAGS += $(X11_CFLAGS)
+endif
 
 libEGL_la_CFLAGS += \
 	-DDEFAULT_EGL_VENDOR_CONFIG_DIRS=\"@sysconfdir@/glvnd/egl_vendor.d:@datadir@/glvnd/egl_vendor.d\"
@@ -86,21 +89,39 @@ libEGL_dispatch_stubs_la_SOURCES = \
 	egldispatchstubs.c \
 	g_egldispatchstubs.c
 
+if HAVE_PYTHON
 BUILT_SOURCES = g_egldispatchstubs.c g_egldispatchstubs.h
 CLEANFILES = $(BUILT_SOURCES)
 
 GENERATE_DISPATCH_SCRIPT = $(top_srcdir)/src/generate/gen_egl_dispatch.py
 GENERATE_LIST_FILES = \
-	$(top_srcdir)/src/generate/eglFunctionList.py \
 	$(top_srcdir)/src/generate/xml/egl.xml
 
 GENERATE_DEPS = \
+	$(top_srcdir)/src/generate/eglFunctionList.py \
 	$(top_srcdir)/src/generate/genCommon.py \
 	$(GENERATE_DISPATCH_SCRIPT) \
 	$(GENERATE_LIST_FILES)
 
 g_egldispatchstubs.c : $(GENERATE_DEPS)
-	$(VM_V_GEN)$(PYTHON2) $(GENERATE_DISPATCH_SCRIPT) source $(GENERATE_LIST_FILES) > $@
+	$(AM_V_GEN)$(PYTHON) $(GENERATE_DISPATCH_SCRIPT) source $(GENERATE_LIST_FILES) > $@
 
 g_egldispatchstubs.h : $(GENERATE_DEPS)
-	$(VM_V_GEN)$(PYTHON2) $(GENERATE_DISPATCH_SCRIPT) header $(GENERATE_LIST_FILES) > $@
+	$(AM_V_GEN)$(PYTHON) $(GENERATE_DISPATCH_SCRIPT) header $(GENERATE_LIST_FILES) > $@
+endif
+
+AM_TESTS_ENVIRONMENT = \
+	TOP_SRCDIR='$(top_srcdir)' \
+	TOP_BUILDDIR='$(top_builddir)' \
+	NM='$(NM)' \
+	PYTHON='$(PYTHON)'
+TESTS = egl-symbol-check.sh
+
+EXTRA_DIST = \
+	egl-symbol-check.sh \
+	egl.symbols \
+	meson.build
+
+pkgconfigdir = $(libdir)/pkgconfig
+pkgconfig_DATA = egl.pc
+

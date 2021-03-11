@@ -13,6 +13,9 @@ Both GLX and EGL are supported, in any combination with OpenGL and OpenGL ES.
 
 libglvnd was originally described in Andy Ritger's OpenGL ABI proposal [1].
 
+The official repository for libglvnd is hosted on FreeDesktop.org's GitLab:
+https://gitlab.freedesktop.org/glvnd/libglvnd
+
 
 Building the library
 ----------------------
@@ -24,6 +27,16 @@ On Debian and derivatives, run:
 
 Run `./autogen.sh`, then run `./configure` and `make`.
 
+Alternatively you can use meson and ninja, which is much faster but should be
+otherwise the same (You will need packages from above too):
+
+    sudo apt-get install ninja-build meson
+    meson builddir 
+    ninja -C builddir
+
+Meson 0.48.0 is currently required, if your distro doesn't have meson 0.48 in
+the repos you can try the methods suggested
+[here](https://mesonbuild.com/Getting-meson.html).
 
 Code overview
 -------------
@@ -210,6 +223,7 @@ EGL\_EXT\_device\_enumeration.
 
 In order to find the available vendor libraries, each vendor provides a JSON
 file in a well-known directory, similar to how Vulkan ICD's are loaded.
+Please see [EGL ICD enumeration](src/EGL/icd_enumeration.md) for more details.
 
 When the application calls eglGetPlatformDisplay, EGL will simply call into
 each vendor library until it finds one that succeeds. After that, whichever

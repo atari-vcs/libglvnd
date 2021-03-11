@@ -36,7 +36,7 @@ libopengl_main_la_CFLAGS = \
 
 lib_LTLIBRARIES = libOpenGL.la
 
-libOpenGL_la_SOURCES = 
+libOpenGL_la_SOURCES =
 libOpenGL_la_LDFLAGS = -shared \
 	$(LINKER_FLAG_NO_UNDEFINED) \
 	-version-info 0
@@ -47,3 +47,17 @@ libOpenGL_la_LIBADD = \
 	../GLdispatch/vnd-glapi/libglapi_opengl.la \
 	../util/libutils_misc.la
 
+pkgconfigdir = $(libdir)/pkgconfig
+pkgconfig_DATA = opengl.pc
+
+AM_TESTS_ENVIRONMENT = \
+	TOP_SRCDIR='$(top_srcdir)' \
+	TOP_BUILDDIR='$(top_builddir)' \
+	NM='$(NM)' \
+	PYTHON='$(PYTHON)'
+TESTS = ogl-symbol-check.sh
+
+EXTRA_DIST = \
+	ogl-symbol-check.sh \
+	ogl.symbols \
+	meson.build
